@@ -1,88 +1,71 @@
 import styles from './App.module.css';
 import { useEffect, useState } from 'react';
+import { ref, onValue, push, set, remove } from 'firebase/database';
+import { db } from './firebase';
 
 export const App = () => {
 	const [todos, setTodos] = useState([]);
-	const [refreshTodosFlag, setRefreshTodosFlag] = useState(false);
 	const [searchInput, setSearchInput] = useState('');
 	const [sorted, setSorted] = useState(false);
 
-	let currentTodo = todos.slice();
-
-	const refreshTodos = () => setRefreshTodosFlag(!refreshTodosFlag);
+	let currentTodo = Object.entries(todos);
 
 	useEffect(() => {
-		try {
-			const fetchPosts = async () => {
-				const res = await fetch('http://localhost:3005/todos');
-				const data = await res.json();
-				setTodos(data);
-			};
-			fetchPosts();
-		} catch (err) {
-			console.error(err.message);
-		}
-	}, [refreshTodosFlag]);
+		const productsDBRef = ref(db, 'todos');
+
+		return onValue(productsDBRef, (snapshot) => {
+			const loadedProducts = snapshot.val() || [];
+
+			setTodos(loadedProducts);
+		});
+	}, []);
 
 	const handleAddTodos = () => {
 		const inputTodo = prompt('What do you have on mind?');
 		if (!inputTodo) return;
 
-		fetch('http://localhost:3005/todos', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json;charset=utf-8' },
-			body: JSON.stringify({
-				id: todos[0]?.id ? todos.at(-1).id + 1 : 1,
-				title: inputTodo,
-				checked: false,
-			}),
+		const productsDBRef = ref(db, 'todos');
+
+		push(productsDBRef, {
+			title: inputTodo,
+			id: currentTodo.length > 0 ? currentTodo.at(-1).at(-1).id + 1 : 1,
+			checked: false,
 		});
+
 		setSearchInput('');
-		refreshTodos();
 	};
 
-	const handleEditTodos = (id) => {
+	const handleEditTodos = (todo) => {
 		const inputTodo = prompt('Insert edited text');
 		if (!inputTodo) return;
 
-		fetch(`http://localhost:3005/todos/${id}`, {
-			method: 'PUT',
-			headers: { 'Content-Type': 'application/json;charset=utf-8' },
-			body: JSON.stringify({
-				id,
-				title: inputTodo,
-				checked: false,
-			}),
+		const productTodoDBRef = ref(db, `todos/${todo[0]}`);
+
+		set(productTodoDBRef, {
+			id: todo[1].id,
+			title: inputTodo,
+			checked: false,
 		});
-		refreshTodos();
 	};
 
-	const handleDeleteTodos = (id) => {
-		fetch(`http://localhost:3005/todos/${id}`, {
-			method: 'DELETE',
-		});
-		setSearchInput('');
-		refreshTodos();
+	const handleDeleteTodos = (todo) => {
+		const productTodoDBRef = ref(db, `todos/${todo[0]}`);
+
+		remove(productTodoDBRef);
 	};
 
 	const handleSort = () => {
 		setSorted((sorted) => !sorted);
 	};
 
-	const handleCheck = (id) => {
-		const [todoToChecked] = todos.slice().filter((todo) => todo.id === id);
-		const { idMain, title, checked } = todoToChecked;
+	const handleCheck = (todo) => {
+		const productTodoDBRef = ref(db, `todos/${todo[0]}`);
 
-		fetch(`http://localhost:3005/todos/${id}`, {
-			method: 'PUT',
-			headers: { 'Content-Type': 'application/json;charset=utf-8' },
-			body: JSON.stringify({
-				id: idMain,
-				title,
-				checked: !checked,
-			}),
+		set(productTodoDBRef, {
+			id: todo[1].id,
+			title: todo[1].title,
+			checked: !todo[1].checked,
 		});
-		refreshTodos();
 	};
 
 	return (
@@ -114,7 +97,7 @@ export const App = () => {
 
 const ControlButton = ({ onControl, todo, children }) => {
 	return (
-		<button className={styles.editButton} onClick={() => onControl(todo.id)}>
+		<button className={styles.editButton} onClick={() => onControl(todo)}>
 			{children}
 		</button>
 	);
@@ -151,7 +134,9 @@ const TodoListBody = ({
 	if (sorted) {
 		const sortedTodos = currentTodo
 			.slice()
-			.sort((a, b) => (a.title.toLowerCase() < b.title.toLowerCase() ? -1 : 1));
+			.sort((a, b) =>
+				a[1].title.toLowerCase() < b[1].title.toLowerCase() ? -1 : 1,
+			);
 		currentTodo = sortedTodos;
 	}
 	return (
@@ -160,22 +145,24 @@ const TodoListBody = ({
 				currentTodo
 					.filter((todo) =>
 						searchInput.toLowerCase() === ''
-							? todo
-							: todo.title.toLowerCase().includes(searchInput),
+							? todo[1]
+							: todo[1].title.toLowerCase().includes(searchInput),
 					)
 					.map((todo) => {
 						return (
-							<label key={todo.id} className={styles.label}>
+							<label key={todo[0]} className={styles.label}>
 								<div>
 									<input
 										name="search"
 										type="checkbox"
 										className={styles.checkbox}
-										checked={todo.checked}
-										onChange={() => onHandleCheck(todo.id)}
+										checked={todo[1].checked}
+										onChange={() => onHandleCheck(todo)}
 									/>
-									<span className={todo.checked ? styles.checked : ''}>
-										{todo.title}
+									<span
+										className={todo[1].checked ? styles.checked : ''}
+									>
+										{todo[1].title}
 									</span>
 								</div>
 								<div className={styles.buttonGroup}>
